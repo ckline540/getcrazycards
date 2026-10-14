@@ -348,9 +348,10 @@ body.editing .tile { border-color: rgba(255, 194, 74, 0.3); }
 .drawer-total { display: flex; justify-content: space-between; align-items: baseline; font-size: 1.1rem; }
 .drawer-total strong { font-family: var(--display); font-size: 2rem; color: var(--green-hi); }
 .checkout-note {
-  margin: 0; text-align: center; font-family: var(--display); font-weight: 800; letter-spacing: 0.12em; font-size: 1.15rem;
-  color: var(--amber); padding: 12px; border: 1px dashed rgba(255, 194, 74, 0.5); border-radius: var(--radius-sm);
+  margin: 0; text-align: center; font-family: var(--body); font-weight: 600; font-size: 1rem; line-height: 1.45;
+  color: var(--amber); padding: 14px; border: 1px dashed rgba(255, 194, 74, 0.5); border-radius: var(--radius-sm);
 }
+.checkout-note a { color: var(--green-hi); font-weight: 800; white-space: nowrap; text-decoration: underline; }
 .checkout-note[hidden] { display: none; }
 
 /* ---------- editor dialog ---------- */
@@ -546,7 +547,7 @@ body.editing .tile { border-color: rgba(255, 194, 74, 0.3); }
   <div class="drawer-foot">
     <div class="drawer-total"><span>Total</span><strong class="cart-total">$0.00</strong></div>
     <button type="button" id="checkout-btn" class="btn-big btn-primary" disabled>CHECKOUT</button>
-    <p id="checkout-note" class="checkout-note" hidden>CHECKOUT COMING SOON</p>
+    <p id="checkout-note" class="checkout-note" hidden>Want to buy these cards but our checkout is not set up yet? Text us at <a id="checkout-sms" href="sms:+13179654385">317-965-4385</a> and we will make the transaction happen right away.</p>
   </div>
 </aside>
 
@@ -1055,7 +1056,17 @@ body.editing .tile { border-color: rgba(255, 194, 74, 0.3); }
     store(KEY_CART, state.cart);
     renderCart();
   });
-  $("#checkout-btn").addEventListener("click", function () { $("#checkout-note").hidden = false; });
+  $("#checkout-btn").addEventListener("click", function () {
+    var items = state.cart.map(byId).filter(Boolean);
+    var lines = items.map(function (c) {
+      return "- " + [c.player, c.set_year, c.card].filter(Boolean).join(" ") + (c.card_number ? " #" + c.card_number : "") + " (" + money(c.price) + ")";
+    });
+    var total = items.reduce(function (s, c) { return s + (Number(c.price) || 0); }, 0);
+    var body = "Hi Crazy Cards, I want to buy:\n" + lines.join("\n") + "\nTotal: " + money(total);
+    $("#checkout-sms").href = "sms:+13179654385?&body=" + encodeURIComponent(body);
+    $("#checkout-note").hidden = false;
+    $("#checkout-note").scrollIntoView({ block: "nearest" });
+  });
   doc.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && $("#cart-drawer").classList.contains("open")) openCart(false);
   });
