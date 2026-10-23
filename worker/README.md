@@ -20,7 +20,7 @@ What it does:
 5. In Stripe Dashboard > Developers > Webhooks, add an endpoint at `<worker url>/webhook` listening to
    `checkout.session.completed`, `checkout.session.expired`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`.
    Copy its signing secret and run `npx wrangler secret put STRIPE_WEBHOOK_SECRET`.
-6. Put the worker URL into `index.html` where it says `__CHECKOUT_API__`, then push.
+6. Put the worker URL into `index.html` where it says `CHECKOUT_API` (already set to https://crazycards-checkout.crazycards.workers.dev), then push.
 
 ## Every inventory change
 

@@ -690,7 +690,7 @@ body.editing .tile { border-color: rgba(255, 194, 74, 0.3); }
   var KEY_INV = "crazycards.inventory.v1";
   var KEY_CART = "crazycards.cart.v1";
   /* Checkout service (worker/ in the repo). Leave empty to fall back to the text-us note. */
-  var CHECKOUT_API = "__CHECKOUT_API__";
+  var CHECKOUT_API = "https://crazycards-checkout.crazycards.workers.dev";
   var doc = document;
   var $ = function (s, el) { return (el || doc).querySelector(s); };
   var $$ = function (s, el) { return Array.prototype.slice.call((el || doc).querySelectorAll(s)); };
