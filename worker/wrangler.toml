@@ -1,0 +1,21 @@
+name = "crazycards-checkout"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+# Created with: npx wrangler kv namespace create SALES   (paste the id it prints)
+kv_namespaces = [
+  { binding = "SALES", id = "REPLACE_WITH_KV_ID" }
+]
+
+[vars]
+SITE_ORIGIN = "https://getcrazycards.com"
+INVENTORY_URL = "https://getcrazycards.com/inventory.json"
+# Shipping: flat rate in cents, free at or above FREE_SHIPPING_OVER_CENTS (0 = never free).
+SHIPPING_CENTS = "499"
+FREE_SHIPPING_OVER_CENTS = "5000"
+SHIPPING_LABEL = "USPS tracked (bubble mailer)"
+ALLOWED_COUNTRIES = "US"
+
+# Secrets (never in this file). Set with:
+#   npx wrangler secret put STRIPE_SECRET_KEY
+#   npx wrangler secret put STRIPE_WEBHOOK_SECRET

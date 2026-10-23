@@ -271,6 +271,8 @@ body.editing .shop-controls { position: static; }
 }
 .badge-hold { background: rgba(255, 194, 74, 0.95); color: #1a1200; }
 .badge-collection { background: rgba(255, 93, 115, 0.95); color: #1d0006; }
+.badge-sold { background: rgba(127, 138, 173, 0.95); color: #0b1020; }
+.badge-reserved { background: rgba(42, 120, 255, 0.95); color: #fff; }
 .badge-grade { background: rgba(4, 6, 13, 0.8); color: var(--green-hi); box-shadow: inset 0 0 0 1px rgba(31, 224, 122, 0.6); margin-left: auto; }
 .tile.is-unavailable .tile-media img { opacity: 0.75; }
 
@@ -353,6 +355,10 @@ body.editing .tile { border-color: rgba(255, 194, 74, 0.3); }
 }
 .checkout-note a { color: var(--green-hi); font-weight: 800; white-space: nowrap; text-decoration: underline; }
 .checkout-note[hidden] { display: none; }
+.checkout-note .checkout-error { display: block; color: var(--text); margin-bottom: 6px; }
+.checkout-note .checkout-error:empty { display: none; }
+.btn-big.is-busy { opacity: 0.7; cursor: progress; }
+.checkout-secure { margin: 8px 0 0; text-align: center; color: var(--muted); font-size: 0.85rem; }
 
 /* ---------- editor dialog ---------- */
 .editor {
@@ -547,7 +553,8 @@ body.editing .tile { border-color: rgba(255, 194, 74, 0.3); }
   <div class="drawer-foot">
     <div class="drawer-total"><span>Total</span><strong class="cart-total">$0.00</strong></div>
     <button type="button" id="checkout-btn" class="btn-big btn-primary" disabled>CHECKOUT</button>
-    <p id="checkout-note" class="checkout-note" hidden>Want to buy these cards but our checkout is not set up yet? Text us at <a id="checkout-sms" href="sms:+13179654385">317-965-4385</a> and we will make the transaction happen right away.</p>
+    <p id="checkout-note" class="checkout-note" hidden><span id="checkout-error" class="checkout-error"></span>Having trouble checking out? Text us at <a id="checkout-sms" href="sms:+13179654385">317-965-4385</a> and we will make the transaction happen right away.</p>
+    <p class="checkout-secure">Secure card payment by Stripe. Shipping is added at checkout.</p>
   </div>
 </aside>
 
@@ -621,7 +628,7 @@ body.editing .tile { border-color: rgba(255, 194, 74, 0.3); }
   "use strict";
 
   /* ---------- shared helpers (browser + build script) ---------- */
-  var STATUS_LABEL = { hold: "HOLD", collection: "COLLECTION ONLY" };
+  var STATUS_LABEL = { hold: "HOLD", collection: "COLLECTION ONLY", sold: "SOLD", reserved: "IN CHECKOUT" };
 
   function esc(v) {
     return String(v == null ? "" : v)
@@ -663,7 +670,7 @@ body.editing .tile { border-color: rgba(255, 194, 74, 0.3); }
             '<span class="price">' + (forSale || Number(c.price) > 0 ? money(c.price) : "") + "</span>" +
             (forSale
               ? '<button type="button" class="btn-add" data-add="' + esc(c.id) + '">ADD TO CART</button>'
-              : '<button type="button" class="btn-add" disabled>NOT FOR SALE</button>') +
+              : '<button type="button" class="btn-add" disabled>' + (c.status === "sold" ? "SOLD" : c.status === "reserved" ? "IN CHECKOUT" : "NOT FOR SALE") + '</button>') +
           "</div>" +
           '<div class="tile-admin">' +
             '<button type="button" class="btn-ghost" data-edit="' + esc(c.id) + '">Edit card</button>' +
@@ -682,6 +689,8 @@ body.editing .tile { border-color: rgba(255, 194, 74, 0.3); }
   /* ---------- browser app ---------- */
   var KEY_INV = "crazycards.inventory.v1";
   var KEY_CART = "crazycards.cart.v1";
+  /* Checkout service (worker/ in the repo). Leave empty to fall back to the text-us note. */
+  var CHECKOUT_API = "__CHECKOUT_API__";
   var doc = document;
   var $ = function (s, el) { return (el || doc).querySelector(s); };
   var $$ = function (s, el) { return Array.prototype.slice.call((el || doc).querySelectorAll(s)); };
@@ -1056,7 +1065,8 @@ body.editing .tile { border-color: rgba(255, 194, 74, 0.3); }
     store(KEY_CART, state.cart);
     renderCart();
   });
-  $("#checkout-btn").addEventListener("click", function () {
+  /* ---------- checkout (Stripe via the checkout worker) ---------- */
+  function showCheckoutNote(message) {
     var items = state.cart.map(byId).filter(Boolean);
     var lines = items.map(function (c) {
       return "- " + [c.player, c.set_year, c.card].filter(Boolean).join(" ") + (c.card_number ? " #" + c.card_number : "") + " (" + money(c.price) + ")";
@@ -1064,9 +1074,87 @@ body.editing .tile { border-color: rgba(255, 194, 74, 0.3); }
     var total = items.reduce(function (s, c) { return s + (Number(c.price) || 0); }, 0);
     var body = "Hi Crazy Cards, I want to buy:\n" + lines.join("\n") + "\nTotal: " + money(total);
     $("#checkout-sms").href = "sms:+13179654385?&body=" + encodeURIComponent(body);
+    $("#checkout-error").textContent = message || "";
     $("#checkout-note").hidden = false;
     $("#checkout-note").scrollIntoView({ block: "nearest" });
+  }
+
+  /* Mark cards sold or held in another shopper's checkout, using the worker's list. */
+  function applyAvailability(data) {
+    var changed = false;
+    function mark(ids, status) {
+      (ids || []).forEach(function (id) {
+        var c = byId(id);
+        if (c && c.status !== status && (c.status === "sell" || !c.status || c.status === "reserved")) { c.status = status; changed = true; }
+      });
+    }
+    // Cards no longer reserved go back on sale (unless they are now sold).
+    state.inventory.forEach(function (c) {
+      if (c.status === "reserved" && (data.reserved || []).indexOf(c.id) === -1 && (data.sold || []).indexOf(c.id) === -1) { c.status = "sell"; changed = true; }
+    });
+    mark(data.reserved, "reserved");
+    mark(data.sold, "sold");
+    if (changed) {
+      var before = state.cart.length;
+      render();
+      renderCart();
+      if (state.cart.length < before) toast("A card in your cart just sold and was removed.");
+    }
+  }
+
+  function syncAvailability() {
+    if (!CHECKOUT_API || CHECKOUT_API.indexOf("__") === 0) return;
+    fetch(CHECKOUT_API + "/sold", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) { if (data) applyAvailability(data); })
+      .catch(function () { /* offline or worker down: shop still works, checkout will say so */ });
+  }
+
+  $("#checkout-btn").addEventListener("click", function () {
+    var btn = this;
+    var ids = state.cart.map(byId).filter(Boolean).filter(isForSale).map(function (c) { return c.id; });
+    if (!ids.length) return;
+    if (!CHECKOUT_API || CHECKOUT_API.indexOf("__") === 0) { showCheckoutNote(""); return; }
+    btn.disabled = true;
+    btn.classList.add("is-busy");
+    btn.textContent = "ONE MOMENT\u2026";
+    $("#checkout-note").hidden = true;
+    fetch(CHECKOUT_API + "/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: ids })
+    })
+      .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+      .then(function (res) {
+        if (res.ok && res.data && res.data.url) { location.href = res.data.url; return; }
+        var data = res.data || {};
+        if (data.unavailable && data.unavailable.length) {
+          applyAvailability({ sold: data.unavailable, reserved: [] });
+        }
+        throw new Error(data.error || "Checkout could not start.");
+      })
+      .catch(function (err) {
+        btn.disabled = !state.cart.length;
+        btn.classList.remove("is-busy");
+        btn.textContent = "CHECKOUT";
+        showCheckoutNote(err && err.message ? err.message : "Checkout could not start.");
+      });
   });
+
+  /* Coming back from Stripe */
+  (function handleReturn() {
+    var q = new URLSearchParams(location.search);
+    if (q.has("paid")) {
+      state.cart = [];
+      store(KEY_CART, state.cart);
+      toast("Payment received. Thank you! A receipt is on its way to your email.");
+    } else if (q.has("canceled")) {
+      toast("Checkout canceled. Your cart is saved.");
+    }
+    if (q.has("paid") || q.has("canceled")) {
+      try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) {}
+    }
+  })();
   doc.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && $("#cart-drawer").classList.contains("open")) openCart(false);
   });
@@ -1079,6 +1167,7 @@ body.editing .tile { border-color: rgba(255, 194, 74, 0.3); }
 
   render();
   renderCart();
+  syncAvailability();
 })(typeof window !== "undefined" ? window : globalThis);
 </script>
 </body>
