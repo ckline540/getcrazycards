@@ -9,7 +9,7 @@ kv_namespaces = [
 
 [vars]
 SITE_ORIGIN = "https://getcrazycards.com"
-INVENTORY_URL = "https://getcrazycards.com/inventory.json"
+INVENTORY_URL = "https://raw.githubusercontent.com/ckline540/getcrazycards/main/inventory.json"
 # Shipping: flat rate in cents, free at or above FREE_SHIPPING_OVER_CENTS (0 = never free).
 SHIPPING_CENTS = "499"
 FREE_SHIPPING_OVER_CENTS = "5000"

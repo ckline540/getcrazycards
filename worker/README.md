@@ -4,7 +4,7 @@ A small Cloudflare Worker that lets the static shop at getcrazycards.com take re
 
 What it does:
 
-- `POST /checkout` takes the card ids in the cart, prices them from `https://getcrazycards.com/inventory.json`, creates a Stripe Checkout Session (card payment, US shipping address, flat shipping) and returns the Stripe URL. Each card is held for 30 minutes while that checkout is open.
+- `POST /checkout` takes the card ids in the cart, prices them from `inventory.json` on the main branch (read through raw.githubusercontent.com), creates a Stripe Checkout Session (card payment, US shipping address, flat shipping) and returns the Stripe URL. Each card is held for 30 minutes while that checkout is open.
 - `POST /webhook` receives Stripe events. A paid session marks its cards sold forever. An expired or failed session releases the hold.
 - `GET /sold` returns `{ sold: [...], reserved: [...] }`. The shop calls it on load and shows SOLD / IN CHECKOUT badges.
 
