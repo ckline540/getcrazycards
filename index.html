@@ -389,6 +389,30 @@ body.editing .tile { border-color: rgba(255, 194, 74, 0.3); }
 .field.check input { width: 20px; height: 20px; accent-color: var(--green); }
 .editor-foot { padding: 14px 22px 22px; display: flex; justify-content: flex-end; border-top: 1px solid var(--line); }
 
+/* ---------- order confirmation ---------- */
+.order { width: min(560px, calc(100% - 24px)); }
+.order .editor-head { align-items: center; }
+.order-check {
+  flex: none; width: 52px; height: 52px; border-radius: 999px; display: grid; place-items: center;
+  background: var(--grad); color: #03110a; box-shadow: var(--glow-green);
+}
+.order-check svg { width: 28px; height: 28px; }
+.order-body { padding: 18px 22px 6px; display: grid; gap: 16px; }
+.order-lead { margin: 0; font-size: 1.05rem; line-height: 1.5; }
+.order-lead strong { color: var(--green-hi); }
+.order-number { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.order-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
+.order-list li { display: flex; justify-content: space-between; gap: 14px; padding: 12px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.order-list li:last-child { border-bottom: 0; }
+.order-list li.order-total { background: var(--panel-2); font-family: var(--display); font-weight: 800; font-size: 1.15rem; }
+.order-list li.order-total span:last-child { color: var(--green-hi); }
+.order-list .order-muted { color: var(--muted); }
+.order-next { margin: 0; padding: 14px; border-radius: var(--radius-sm); background: rgba(31, 224, 122, 0.08); border: 1px solid rgba(31, 224, 122, 0.35); line-height: 1.5; }
+.order-next a { color: var(--green-hi); font-weight: 800; text-decoration: underline; white-space: nowrap; }
+.order-ship { margin: 0; color: #c9d3ef; line-height: 1.5; }
+.order-ship strong { display: block; color: var(--text); }
+.order-pending { margin: 0; color: var(--muted); }
+
 /* ---------- toast ---------- */
 .toast {
   position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 90;
@@ -612,6 +636,24 @@ body.editing .tile { border-color: rgba(255, 194, 74, 0.3); }
       <button type="submit" id="editor-save" class="btn-big btn-primary">Save changes</button>
     </div>
   </form>
+</dialog>
+
+<!-- Order confirmation, shown when Stripe sends the buyer back -->
+<dialog id="order" class="editor order" aria-labelledby="order-title">
+  <div class="editor-head">
+    <div class="order-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M4 12.5l5 5L20 6.5"/></svg></div>
+    <div style="flex:1">
+      <h2 id="order-title">Payment received</h2>
+      <p id="order-number" class="order-number">Order confirmed</p>
+    </div>
+    <button type="button" id="order-close" class="icon-btn" aria-label="Close">&times;</button>
+  </div>
+  <div id="order-body" class="order-body">
+    <p class="order-pending">Loading your order&hellip;</p>
+  </div>
+  <div class="editor-foot">
+    <button type="button" id="order-done" class="btn-big btn-primary">BACK TO THE SHOP</button>
+  </div>
 </dialog>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -1141,13 +1183,60 @@ body.editing .tile { border-color: rgba(255, 194, 74, 0.3); }
       });
   });
 
+  /* ---------- order confirmation ---------- */
+  var orderDlg = $("#order");
+  function closeOrder() { if (orderDlg.open) orderDlg.close(); doc.body.classList.remove("locked"); }
+  $("#order-close").addEventListener("click", closeOrder);
+  $("#order-done").addEventListener("click", closeOrder);
+  orderDlg.addEventListener("close", function () { doc.body.classList.remove("locked"); });
+
+  function orderStaticHTML(extra) {
+    return '<p class="order-lead">Your payment went through and your cards are yours. <strong>Thank you!</strong></p>' + (extra || "") +
+      '<p class="order-next">We pack every order in a sleeve and bubble mailer and ship within 2 business days with USPS tracking. Questions? Text us at <a href="sms:+13179654385">317-965-4385</a>.</p>';
+  }
+
+  function renderOrder(o) {
+    var rows = (o.items || []).map(function (it) {
+      return "<li><span>" + esc(it.name) + "</span><span>" + money(it.amount / 100) + "</span></li>";
+    }).join("");
+    rows += '<li><span class="order-muted">Shipping</span><span class="order-muted">' + (o.shipping ? money(o.shipping / 100) : "Free") + "</span></li>";
+    rows += '<li class="order-total"><span>Total paid</span><span>' + money(o.total / 100) + "</span></li>";
+    var ship = o.ship_to ? '<p class="order-ship"><strong>Shipping to</strong>' +
+      esc([o.ship_to.name, o.ship_to.line1, o.ship_to.line2].filter(Boolean).join(", ")) + "<br>" +
+      esc([o.ship_to.city, o.ship_to.state, o.ship_to.postal_code].filter(Boolean).join(" ")) + "</p>" : "";
+    var receipt = o.email ? '<p class="order-ship">A receipt from Stripe is on its way to <strong>' + esc(o.email) + "</strong></p>" : "";
+    $("#order-number").textContent = "Order " + (o.order_number || "") + " \u2022 confirmed";
+    $("#order-body").innerHTML = orderStaticHTML('<ul class="order-list">' + rows + "</ul>" + ship + receipt);
+  }
+
+  function openOrder(sessionId) {
+    $("#order-body").innerHTML = orderStaticHTML('<p class="order-pending">Loading your order details\u2026</p>');
+    if (!orderDlg.open) orderDlg.showModal();
+    doc.body.classList.add("locked");
+    if (!sessionId || !CHECKOUT_API || CHECKOUT_API.indexOf("__") === 0) {
+      $("#order-body").innerHTML = orderStaticHTML();
+      return;
+    }
+    fetch(CHECKOUT_API + "/order?session_id=" + encodeURIComponent(sessionId), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (o) {
+        if (o && o.paid) renderOrder(o);
+        else if (o && o.status) {
+          $("#order-number").textContent = "Order " + (o.order_number || "") + " \u2022 processing";
+          $("#order-body").innerHTML = '<p class="order-lead">Stripe is still confirming your payment. You will get an email receipt once it clears.</p>' +
+            '<p class="order-next">Questions? Text us at <a href="sms:+13179654385">317-965-4385</a>.</p>';
+        } else $("#order-body").innerHTML = orderStaticHTML();
+      })
+      .catch(function () { $("#order-body").innerHTML = orderStaticHTML(); });
+  }
+
   /* Coming back from Stripe */
   (function handleReturn() {
     var q = new URLSearchParams(location.search);
     if (q.has("paid")) {
       state.cart = [];
       store(KEY_CART, state.cart);
-      toast("Payment received. Thank you! A receipt is on its way to your email.");
+      openOrder(q.get("session_id"));
     } else if (q.has("canceled")) {
       toast("Checkout canceled. Your cart is saved.");
     }

@@ -6,6 +6,7 @@
  *   POST /checkout  -> builds a Stripe Checkout Session for the cards in the cart
  *   POST /webhook   -> Stripe tells us a session was paid; we mark those cards sold
  *   GET  /sold      -> the shop asks which cards are sold or sitting in someone's checkout
+ *   GET  /order     -> after paying, the shop shows the buyer a confirmation built from the session
  *
  * Every card is one of a kind, so a card is "reserved" the moment a Checkout
  * Session is created for it (30 minutes) and "sold" once Stripe confirms payment.
@@ -27,6 +28,7 @@ export default {
     try {
       if (url.pathname === "/health") return json({ ok: true }, 200, cors);
       if (url.pathname === "/sold" && request.method === "GET") return await handleSold(env, cors);
+      if (url.pathname === "/order" && request.method === "GET") return await handleOrder(url, env, cors);
       if (url.pathname === "/checkout" && request.method === "POST") return await handleCheckout(request, env, cors);
       if (url.pathname === "/webhook" && request.method === "POST") return await handleWebhook(request, env, ctx);
       return json({ error: "Not found" }, 404, cors);
@@ -151,6 +153,41 @@ async function loadInventory(env) {
   const list = Array.isArray(data) ? data : data.cards;
   if (!Array.isArray(list)) throw new Error("inventory.json has no card list");
   return list;
+}
+
+/* ---------- /order ---------- */
+
+async function handleOrder(url, env, cors) {
+  const id = url.searchParams.get("session_id") || "";
+  if (!/^cs_(live|test)_[A-Za-z0-9]+$/.test(id)) return json({ error: "Unknown order." }, 400, cors);
+  if (!env.STRIPE_SECRET_KEY) return json({ error: "Checkout is not configured yet." }, 503, cors);
+  let session;
+  try {
+    session = await stripe(env, "GET", "/v1/checkout/sessions/" + encodeURIComponent(id) + "?expand[]=line_items");
+  } catch (e) {
+    return json({ error: "We could not find that order." }, 404, cors);
+  }
+  const paid = session.payment_status === "paid";
+  const cd = session.customer_details || {};
+  const addr = (session.shipping_details && session.shipping_details.address) || (session.collected_information && session.collected_information.shipping_details && session.collected_information.shipping_details.address) || cd.address || {};
+  const shipName = (session.shipping_details && session.shipping_details.name) || (session.collected_information && session.collected_information.shipping_details && session.collected_information.shipping_details.name) || cd.name || "";
+  const items = ((session.line_items && session.line_items.data) || []).map((li) => ({
+    name: li.description,
+    amount: li.amount_total,
+    quantity: li.quantity,
+  }));
+  return json({
+    paid,
+    status: session.payment_status,
+    order_number: id.slice(-8).toUpperCase(),
+    created: session.created,
+    email: cd.email || null,
+    items,
+    subtotal: session.amount_subtotal,
+    shipping: (session.total_details && session.total_details.amount_shipping) || 0,
+    total: session.amount_total,
+    ship_to: shipName || addr.city ? { name: shipName, line1: addr.line1 || "", line2: addr.line2 || "", city: addr.city || "", state: addr.state || "", postal_code: addr.postal_code || "" } : null,
+  }, 200, { ...cors, "Cache-Control": "no-store" });
 }
 
 /* ---------- /webhook ---------- */
