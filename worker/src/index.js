@@ -26,9 +26,9 @@ export default {
 
     try {
       if (url.pathname === "/health") return json({ ok: true }, 200, cors);
-      if (url.pathname === "/sold" && request.method === "GET") return handleSold(env, cors);
-      if (url.pathname === "/checkout" && request.method === "POST") return handleCheckout(request, env, cors);
-      if (url.pathname === "/webhook" && request.method === "POST") return handleWebhook(request, env, ctx);
+      if (url.pathname === "/sold" && request.method === "GET") return await handleSold(env, cors);
+      if (url.pathname === "/checkout" && request.method === "POST") return await handleCheckout(request, env, cors);
+      if (url.pathname === "/webhook" && request.method === "POST") return await handleWebhook(request, env, ctx);
       return json({ error: "Not found" }, 404, cors);
     } catch (err) {
       console.error(err && err.stack || err);
