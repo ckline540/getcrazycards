@@ -32,7 +32,7 @@ export default {
       return json({ error: "Not found" }, 404, cors);
     } catch (err) {
       console.error(err && err.stack || err);
-      return json({ error: "Something went wrong on our side. Please try again." }, 500, cors);
+      return json({ error: "Something went wrong on our side. Please try again.", detail: String(err && err.message || err) }, 500, cors);
     }
   },
 };
